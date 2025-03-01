@@ -1,9 +1,8 @@
 "use client"
 
-import { useEffect, useCallback, useState } from "react";
+import { useEffect, useState } from "react";
 import sdk from "@farcaster/frame-sdk";
 import { useAccount, useReadContract, useWriteContract } from "wagmi";
-// import { Button } from 'react/';
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -24,30 +23,25 @@ import {
 } from "@/components/ui/select";
 
 import { abi } from "../../abi/deride-abi";
-import { FrameContext } from "@farcaster/frame-core/esm/context";
 
-export default function Demo() {
+export default function RiderPage() {
     const [isSDKLoaded, setIsSDKLoaded] = useState(false);
-    const [context, setContext] = useState<FrameContext>();
-    const [isContextOpen, setIsContextOpen] = useState(false);
-
     const [street, setStreet] = useState("");
     const [city, setCity] = useState("");
     const [state, setState] = useState("");
     const [zip, setZip] = useState("");
+    const [rideStatus, setRideStatus] = useState<string>("none");
+    const [currentRideId, setCurrentRideId] = useState<string | null>(null);
 
-    const States: string[] = [
-        "CO",
-        "CA",
-        "NY",
-        "TX",
-        "FL",
-        "WA",
-    ];
+    const States: string[] = ["CO", "CA", "NY", "TX", "FL", "WA"];
+    const CONTRACT_ADDRESS = "0xB7f8BC63BbcaD18155201308C8f3540b07f84F5e";
 
+    const { address } = useAccount();
+
+    // Load Frame SDK
     useEffect(() => {
         const load = async () => {
-            setContext(await sdk.context);
+            await sdk.context;
             sdk.actions.ready();
         };
         if (sdk && !isSDKLoaded) {
@@ -56,40 +50,51 @@ export default function Demo() {
         }
     }, [isSDKLoaded]);
 
-    const toggleContext = useCallback(() => {
-        setIsContextOpen((prev) => !prev);
-    }, []);
-
-    const { address } = useAccount();
-    const CONTRACT_ADDRESS = "0xB7f8BC63BbcaD18155201308C8f3540b07f84F5e";
-
-    const { data: ride } = useReadContract({
+    // Monitor ride status if we have an active ride
+    const { data: currentRide } = useReadContract({
         address: CONTRACT_ADDRESS,
         abi,
         functionName: "getRide",
-        args: ["ker"],
+        args: currentRideId ? [currentRideId] : undefined,
+        watch: true,
+        enabled: !!currentRideId,
     });
 
     useEffect(() => {
-        console.log("Address: ", address);
-        console.log("Ride: ", ride);
-    });
+        if (currentRide) {
+            setRideStatus(currentRide.status);
+        }
+    }, [currentRide]);
 
-    // const requestRide = (e) => {
-    //   console.log("address: ", street, city, state + "," + zip);
-    // };
+    const { writeContract, isPending: isLoading } = useWriteContract();
 
-    const { writeContract, isPending: isLoading, isSuccess } = useWriteContract();
+    const requestRide = async () => {
+        if (!street || !city || !state || !zip) {
+            alert("Please fill in all address fields");
+            return;
+        }
 
-    const requestRide = () => writeContract({
-        address: CONTRACT_ADDRESS as `0x${string}`,
-        abi,
-        functionName: "requestRide",
-        args: [
-            "user1",
-            {street, city, state, zip},
-        ],
-    })
+        const fullAddress = `${street}, ${city}, ${state} ${zip}`;
+        const mockDistance = (Math.random() * 5).toFixed(1);
+
+        try {
+            const result = await writeContract({
+                address: CONTRACT_ADDRESS as `0x${string}`,
+                abi,
+                functionName: "requestRide",
+                args: [fullAddress, mockDistance],
+            });
+
+            // In a real implementation, you'd want to get the rideId from the event
+            // For now, we'll monitor the transaction receipt
+            setRideStatus("pending");
+            // You'd get the actual rideId from the event logs
+            // setCurrentRideId(rideId);
+        } catch (error) {
+            console.error("Error requesting ride:", error);
+            alert("Failed to request ride");
+        }
+    };
 
     return (
         <div className="w-[300px] mx-auto py-4 px-2">
@@ -98,34 +103,44 @@ export default function Demo() {
             <Card>
                 <CardHeader>
                     <CardTitle>Where are you headed?</CardTitle>
-                    <CardDescription>Type the destination location</CardDescription>
+                    <CardDescription>
+                        {rideStatus === "none" 
+                            ? "Enter your destination" 
+                            : `Ride Status: ${rideStatus}`}
+                    </CardDescription>
                 </CardHeader>
                 <CardContent className="grid gap-6">
                     <div className="grid gap-2">
                         <Label htmlFor="street">Street</Label>
                         <Input
                             id="street"
-                            placeholder="..."
+                            placeholder="Enter street address"
                             value={street}
                             onChange={(e) => setStreet(e.target.value)}
+                            disabled={rideStatus !== "none"}
                         />
                     </div>
                     <div className="grid gap-2">
                         <Label htmlFor="city">City</Label>
                         <Input
                             id="city"
-                            placeholder=""
+                            placeholder="Enter city"
                             value={city}
                             onChange={(e) => setCity(e.target.value)}
+                            disabled={rideStatus !== "none"}
                         />
                     </div>
 
-                    <div className="grid grid-cols-3 gap-4">
+                    <div className="grid grid-cols-2 gap-4">
                         <div className="grid gap-2">
                             <Label htmlFor="state">State</Label>
-                            <Select value={state} onValueChange={setState}>
+                            <Select 
+                                value={state} 
+                                onValueChange={setState}
+                                disabled={rideStatus !== "none"}
+                            >
                                 <SelectTrigger id="state">
-                                    <SelectValue placeholder="state" />
+                                    <SelectValue placeholder="State" />
                                 </SelectTrigger>
                                 <SelectContent>
                                     {States.map((s) => (
@@ -141,43 +156,25 @@ export default function Demo() {
                             <Label htmlFor="zip">Zip code</Label>
                             <Input
                                 id="zip"
-                                placeholder=""
+                                placeholder="Zip"
                                 value={zip}
                                 onChange={(e) => setZip(e.target.value)}
+                                disabled={rideStatus !== "none"}
                             />
                         </div>
                     </div>
                 </CardContent>
 
                 <CardFooter>
-                    <Button onClick={requestRide}>Request Ride</Button>
+                    <Button 
+                        onClick={requestRide} 
+                        disabled={rideStatus !== "none" || isLoading}
+                        className="w-full"
+                    >
+                        {isLoading ? "Requesting..." : "Request Ride"}
+                    </Button>
                 </CardFooter>
             </Card>
-
-            {/*<div className="mb-4">*/}
-            {/*  <h2 className="font-2xl font-bold">Context</h2>*/}
-            {/*  <Button*/}
-            {/*    onClick={toggleContext}*/}
-            {/*    className="flex items-center gap-2 transition-colors"*/}
-            {/*  >*/}
-            {/*    <span*/}
-            {/*      className={`transform transition-transform ${*/}
-            {/*        isContextOpen ? "rotate-90" : ""*/}
-            {/*      }`}*/}
-            {/*    >*/}
-            {/*      ➤*/}
-            {/*    </span>*/}
-            {/*    Tap to expand*/}
-            {/*  </Button>*/}
-
-            {/*  {isContextOpen && (*/}
-            {/*    <div className="p-4 mt-2 bg-gray-100 dark:bg-gray-800 rounded-lg">*/}
-            {/*      <pre className="font-mono text-xs whitespace-pre-wrap break-words max-w-[260px] overflow-x-">*/}
-            {/*        {JSON.stringify(context, null, 2)}*/}
-            {/*      </pre>*/}
-            {/*    </div>*/}
-            {/*  )}*/}
-            {/*</div>*/}
         </div>
     );
 }
